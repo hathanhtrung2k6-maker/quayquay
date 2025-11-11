@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vòng quay chọn người</title>
+  <meta name="description" content="Vòng quay chọn người có tùy chọn chỉ định người thắng (demo)" />
+  <style>
+    :root{
+      --bg1: linear-gradient(135deg,#1f8ef1 0%, #6a11cb 100%);
+      --card-bg: rgba(255,255,255,0.06);
+      --glass: rgba(255,255,255,0.06);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg1);
+      color: #fff;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+    }
+    .container{
+      max-width:980px;
+      width:100%;
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+      border-radius:12px;
+      padding:20px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    }
+    h1{text-align:center;margin:6px 0 18px;font-size:24px}
+    .controls{
+      background: var(--card-bg);
+      padding:14px;
+      border-radius:8px;
+      margin-bottom:18px;
+    }
+    .controls label{display:block;margin-bottom:6px;color:#e7eefc;font-size:14px}
+    #names{
+      width:100%;
+      min-height:120px;
+      resize:vertical;
+      padding:10px;
+      border-radius:6px;
+      border:1px solid rgba(255,255,255,0.06);
+      background: rgba(0,0,0,0.2);
+      color:#fff;
+      font-size:14px;
+    }
+    .row{display:flex;gap:12px;margin-top:10px}
+    .col{flex:1}
+    .col input{width:100%;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:rgba(0,0,0,0.2);color:#fff}
+    .buttons{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+    button{
+      cursor:pointer;
+      border:none;
+      padding:10px 14px;
+      border-radius:8px;
+      background:#fff;
+      color:#222;
+      font-weight:600;
+    }
+    button:active{transform:translateY(1px)}
+    .wheel-area{display:flex;gap:20px;align-items:center;justify-content:center;flex-wrap:wrap;margin-top:16px}
+    .wheel-wrap{position:relative;width:500px;height:500px}
+    #wheel{border-radius:50%;background:transparent;display:block}
+    .pointer{
+      position:absolute;
+      top:-18px;
+      left:50%;
+      transform:translateX(-50%);
+      font-size:28px;
+      filter:drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+      pointer-events:none;
+    }
+    .result{
+      width:260px;
+      min-height:60px;
+      padding:12px;
+      border-radius:8px;
+      background: var(--glass);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      font-size:18px;
+      color:#fff;
+    }
+    footer{margin-top:14px;text-align:center;color:rgba(255,255,255,0.7);font-size:13px}
+    @media(max-width:820px){
+      .wheel-wrap{width:320px;height:320px}
+      #wheel{width:320px;height:320px}
+      .result{width:100%}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Vòng quay chọn người</h1>
+    <section class="controls">
+      <label for="names">Danh sách tên (mỗi tên 1 dòng):</label>
+      <textarea id="names" placeholder="Nhập tên, mỗi tên 1 dòng"></textarea>
+      <div class="row">
+        <div class="col">
+          <label for="forceName">Chỉ định người thắng (để trống nếu không chỉ định)</label>
+          <input id="forceName" placeholder="Gõ chính xác tên từ danh sách" />
+        </div>
+        <div class="col">
+          <label>Hoặc chọn theo chỉ số (1..n)</label>
+          <input id="forceIndex" type="number" min="1" placeholder="Số (ví dụ 2)" />
+        </div>
+      </div>
+      <div class="buttons">
+        <button id="saveBtn">Lưu danh sách</button>
+        <button id="spinBtn">Quay</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+    </section>
+
+    <section class="wheel-area">
+      <div class="wheel-wrap">
+        <canvas id="wheel" width="500" height="500"></canvas>
+        <div class="pointer">▼</div>
+      </div>
+      <div id="result" class="result"></div>
+    </section>
+
+    <footer><small>© 2025 - Trang demo vòng quay</small></footer>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('wheel');
+      const ctx = canvas.getContext('2d');
+      const namesInput = document.getElementById('names');
+      const saveBtn = document.getElementById('saveBtn');
+      const spinBtn = document.getElementById('spinBtn');
+      const resetBtn = document.getElementById('resetBtn');
+      const resultBox = document.getElementById('result');
+      const forceNameInput = document.getElementById('forceName');
+      const forceIndexInput = document.getElementById('forceIndex');
+
+      const W = canvas.width;
+      const H = canvas.height;
+      let segments = [];
+      let isSpinning = false;
+      let currentRotation = 0;
+      const storageKey = 'spinner_names_v1';
+
+      const normDeg = d => ((d % 360) + 360) % 360;
+      const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+      function parseNames() {
+        return namesInput.value.trim().split('\n').map(s => s.trim()).filter(Boolean);
+      }
+
+      function drawWheel() {
+        segments = parseNames();
+        const n = segments.length;
+        const cx = W / 2, cy = H / 2, r = Math.min(W, H) / 2 - 10;
+        ctx.clearRect(0, 0, W, H);
+
+        if (!n) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.fillStyle = '#333';
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.font = '16px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Chưa có tên nào', cx, cy);
+          return;
+        }
+
+        const ang = 2 * Math.PI / n;
+        for (let i = 0; i < n; i++) {
+          const start = i * ang;
+          const end = start + ang;
+          const hue = Math.round(360 * i / n);
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, r, start, end);
+          ctx.closePath();
+          ctx.fillStyle = `hsl(${hue} 60% 50%)`;
+          ctx.fill();
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(start + ang / 2);
+          ctx.fillStyle = '#fff';
+          ctx.font = `${Math.max(12, Math.round(r / 10))}px sans-serif`;
+          ctx.textAlign = 'right';
+          ctx.fillText(segments[i], r - 10, 0);
+          ctx.restore();
+        }
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.18, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fill();
+      }
+
+      function indexAtRotation(rot) {
+        const n = segments.length;
+        const per = 360 / n;
+        const angle = normDeg(-rot + 90);
+        return Math.floor(angle / per) % n;
+      }
+
+      function animateSpin(start, end, dur = 4500) {
+        const startT = performance.now();
+        return new Promise(res => {
+          function frame(now) {
+            const t = Math.min(1, (now - startT) / dur);
+            const eased = easeOutCubic(t);
+            const cur = start + (end - start) * eased;
+            currentRotation = cur;
+            canvas.style.transform = `rotate(${cur}deg)`;
+            if (t < 1) requestAnimationFrame(frame); else res();
+          }
+          requestAnimationFrame(frame);
+        });
+      }
+
+      async function spin() {
+        if (isSpinning) return;
+        segments = parseNames();
+        if (!segments.length) {
+          resultBox.textContent = 'Hãy nhập ít nhất 1 tên.';
+          return;
+        }
+
+        let forced = -1;
+        const fName = forceNameInput.value.trim();
+        const fIdx = forceIndexInput.value.trim();
+        if (fName) {
+          const idx = segments.findIndex(s => s === fName);
+          if (idx === -1) return resultBox.textContent = `Không tìm thấy "${fName}"`;
+          forced = idx;
+        } else if (fIdx) {
+          const v = +fIdx;
+          if (v >= 1 && v <= segments.length) forced = v - 1;
+          else return resultBox.textContent = 'Chỉ số không hợp lệ.';
+        }
+
+        isSpinning = true;
+        spinBtn.disabled = true;
+        resultBox.textContent = 'Đang quay...';
+
+        const n = segments.length;
+        const per = 360 / n;
+        const base = normDeg(currentRotation);
+        const tIdx = forced >= 0 ? forced : Math.floor(Math.random() * n);
+        const center = tIdx * per + per / 2;
+        let desired = normDeg(90 - center);
+        const extra = 5 + Math.floor(Math.random() * 3);
+        const endRot = base + extra * 360 + (desired - base);
+
+        await animateSpin(base, endRot);
+        const win = segments[indexAtRotation(currentRotation)];
+        resultBox.innerHTML = `<strong>Người thắng:</strong> ${win}`;
+        isSpinning = false;
+        spinBtn.disabled = false;
+      }
+
+      saveBtn.onclick = () => {
+        localStorage.setItem(storageKey, namesInput.value.trim());
+        drawWheel();
+        resultBox.textContent = 'Đã lưu danh sách.';
+      };
+      resetBtn.onclick = () => {
+        if (confirm('Reset danh sách?')) {
+          localStorage.removeItem(storageKey);
+          namesInput.value = '';
+          drawWheel();
+          resultBox.textContent = 'Đã reset.';
+        }
+      };
+      spinBtn.onclick = spin;
+      namesInput.oninput = drawWheel;
+      namesInput.value = localStorage.getItem(storageKey) || '';
+      drawWheel();
+    })();
+  </script>
+</body>
+</html>
